@@ -37,11 +37,13 @@ It is **intentionally not** a full GitHub client. No issues, no PRs, no code bro
 - Native SwiftUI menu bar app built on `MenuBarExtra`
 - Repository-grouped workflow run list with status, branch, actor, and elapsed time
 - Smart status icon that reflects aggregate activity (active count, recent failure)
-- Click a run to open it in your browser, ⌘-click to copy its URL, context menu for logs
+- Click a run to open it in your browser, context menu for logs and copying URLs
+- One-click GitHub sign-in directly from the panel (OAuth Device Flow, no client secret)
+- Browse your accessible GitHub repositories from inside Settings to add them with one click
 - Local repository registry persisted via `UserDefaults`
-- Settings window with add/remove repositories, OAuth client setup, and account state
-- GitHub OAuth Device Flow authentication with session storage in the macOS Keychain
-- Live workflow runs from GitHub once authenticated; preview data remains available as a signed-out fallback
+- Settings window with avatar, repository management, and advanced overrides
+- Tokens stored securely in the macOS Keychain
+- Quick footer actions: Settings, open GitHub, Quit
 
 ### Planned for v0.1 (MVP)
 
@@ -131,19 +133,22 @@ Action Bar lives in the macOS menu bar. Clicking the icon opens a compact panel:
 
 ```
 ┌──────────────────────────────────────────────┐
-│ Action Bar                  [⚙︎]   [↻]        │
-│ 3 active workflows                            │
+│ ◉ Your Name                       [↻]  [⚙︎]   │
+│   3 active workflows                          │
 ├──────────────────────────────────────────────┤
-│ owner/repo-one                                │
+│ owner/repo-one                            [↗]│
 │   ⚡  CI       · main · 1m 23s · alex          │
 │   ✓  Deploy   · main · 2m ago                 │
 │                                                │
-│ owner/repo-two                                │
+│ owner/repo-two                            [↗]│
 │   ✗  Tests    · feature/x · 5m ago            │
 ├──────────────────────────────────────────────┤
-│ Updated 12s ago         Rate 4823/5000        │
+│ Updated 12s ago · API 4823/5000               │
+│ ⚙︎ Settings  ↗ GitHub                  ⏻ Quit │
 └──────────────────────────────────────────────┘
 ```
+
+When signed out, the panel shows a single **Sign in with GitHub** card. The first sign-in opens your browser at `github.com/login/device` with the user code pre-filled. Reopen the panel after authorizing and Action Bar detects the new session automatically — no extra clicks.
 
 The **menu bar icon** itself reflects aggregate state:
 
@@ -216,13 +221,10 @@ Folders are organized **by feature** (not by layer), with shared infrastructure 
 
 ## Authentication & security
 
-- **Primary auth:** GitHub OAuth Device Flow. You click *Sign in*, see a short user code, and authorize on `github.com/login/device`. The app polls for a token. No backend, no client secret.
-- **Fallback:** Personal Access Token (fine-grained, read-only) for power users and GitHub Enterprise.
+- **Primary auth:** GitHub OAuth Device Flow. You click *Sign in*, your browser opens with the code pre-filled, and Action Bar detects the authorization automatically when you reopen the panel. No backend, no client secret.
 - **Token storage:** macOS **Keychain** (`kSecClassGenericPassword`, `kSecAttrAccessibleAfterFirstUnlock`).
-- **Required scopes (MVP, read-only):** `repo` (or `public_repo` if you only track public repos). Write scopes like `workflow` are **not** requested.
-- **Network endpoints:** only `api.github.com` (and `github.com` for the device-flow URL the user opens).
-- **Sandboxing:** App Sandbox enabled with `com.apple.security.network.client` only.
-- **Distribution:** Hardened Runtime, Developer ID code-signed, notarized via `notarytool` in CI.
+- **Required scopes (read-only):** `repo` (covers private repos you have access to) and `read:user` (account display).
+- **Network endpoints:** only `api.github.com` and `github.com` (for the device-flow URL the user opens).
 - **Telemetry:** none. No analytics, no crash reporting, no remote configuration.
 
 ### OAuth setup during development
@@ -250,13 +252,11 @@ If you find a security issue, please follow [`SECURITY.md`](SECURITY.md) (coming
 
 ## Configuration
 
-For now, all configuration lives inside the app:
+All configuration lives inside the app:
 
-- **Tracked repositories** — managed in *Settings → Repositories* (`owner/name` format).
+- **Tracked repositories** — managed in *Settings → Repositories*. Type `owner/name`, or click *Browse my GitHub repos* to pick from the repositories your signed-in account can access. *Add example repos* seeds a few well-known public repos for testing.
 - **Refresh cadence** — automatic and adaptive (15s active / 60s idle).
-- **Account** — once auth lands, sign-in/out happens in *Settings → Account*.
-
-Power users will be able to override defaults via *Settings → General* in v0.1.
+- **Account** — sign-in/out happens in the panel itself or in *Settings → Account*. Action Bar ships with a bundled OAuth Client ID; you can override it in *Settings → Advanced*.
 
 ---
 

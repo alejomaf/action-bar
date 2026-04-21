@@ -155,31 +155,12 @@ private struct AccountBadge: View {
     let account: GitHubAccount?
 
     var body: some View {
-        Group {
-            if let account, let url = account.avatarURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        placeholder
-                    }
-                }
-            } else {
-                placeholder
-            }
-        }
-        .frame(width: 32, height: 32)
-        .clipShape(Circle())
-        .overlay(
-            Circle().strokeBorder(.quaternary, lineWidth: 0.5)
-        )
-    }
-
-    private var placeholder: some View {
-        Image("logo", bundle: .module)
-            .resizable()
-            .scaledToFill()
+        RemoteAvatar(url: account?.avatarURL)
+            .frame(width: 32, height: 32)
+            .clipShape(Circle())
+            .overlay(
+                Circle().strokeBorder(.quaternary, lineWidth: 0.5)
+            )
     }
 }
 

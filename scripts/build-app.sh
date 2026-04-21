@@ -33,7 +33,7 @@ if [[ -d "$RESOURCE_BUNDLE" ]]; then
 fi
 
 # Generate .icns from logo.jpg if available.
-LOGO_SOURCE="$ROOT_DIR/logo.jpg"
+LOGO_SOURCE="$ROOT_DIR/Sources/ActionBar/Resources/logo.jpg"
 ICON_NAME="AppIcon"
 if [[ -f "$LOGO_SOURCE" ]] && command -v sips >/dev/null 2>&1 && command -v iconutil >/dev/null 2>&1; then
     ICONSET_DIR="$(mktemp -d)/${ICON_NAME}.iconset"

@@ -266,29 +266,10 @@ private struct AccountAvatar: View {
     let size: CGFloat
 
     var body: some View {
-        Group {
-            if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        placeholder
-                    }
-                }
-            } else {
-                placeholder
-            }
-        }
-        .frame(width: size, height: size)
-        .clipShape(Circle())
-        .overlay(Circle().strokeBorder(.quaternary, lineWidth: 0.5))
-    }
-
-    private var placeholder: some View {
-        Image("logo", bundle: .module)
-            .resizable()
-            .scaledToFill()
+        RemoteAvatar(url: url)
+            .frame(width: size, height: size)
+            .clipShape(Circle())
+            .overlay(Circle().strokeBorder(.quaternary, lineWidth: 0.5))
     }
 }
 
