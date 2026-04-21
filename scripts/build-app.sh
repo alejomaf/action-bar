@@ -87,7 +87,11 @@ EOF
 touch "$CONTENTS_DIR/PkgInfo"
 
 if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP_DIR" >/dev/null 2>&1 || true
+    # If ACTION_BAR_CODESIGN_IDENTITY is set (e.g. a stable self-signed certificate
+    # in your login keychain), use it so rebuilds keep the same code requirement
+    # and macOS does not re-prompt for the keychain password on every install.
+    SIGN_IDENTITY="${ACTION_BAR_CODESIGN_IDENTITY:--}"
+    codesign --force --deep --sign "$SIGN_IDENTITY" "$APP_DIR" >/dev/null 2>&1 || true
 fi
 
 echo "Built $APP_DIR"
