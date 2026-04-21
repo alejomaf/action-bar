@@ -42,6 +42,7 @@ final class AppStore {
     private let client: GitHubClient
     private let poller: RunPoller
     private var signInTask: Task<Void, Never>?
+    private var autoRefreshTask: Task<Void, Never>?
 
     init(
         repositoryRegistry: RepositoryRegistry = RepositoryRegistry(),
@@ -66,6 +67,8 @@ final class AppStore {
             await restoreAuthenticationState()
             await refresh()
         }
+
+        startAutoRefreshLoop()
     }
 
     func refresh() async {
@@ -92,6 +95,29 @@ final class AppStore {
         }
 
         isRefreshing = false
+    }
+
+    /// Background loop that re-fetches workflow runs on an adaptive cadence:
+    /// 15s while any run is active, 60s when everything is idle. Skips the tick
+    /// if there are no repositories to query yet.
+    private func startAutoRefreshLoop() {
+        autoRefreshTask?.cancel()
+        autoRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                let summary = self.summary
+                let interval = await self.poller.interval(for: summary)
+                do {
+                    try await Task.sleep(for: interval)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                if !self.repositories.isEmpty, !self.isRefreshing {
+                    await self.refresh()
+                }
+            }
+        }
     }
 
     func updateGitHubOAuthClientID(_ clientID: String) {
