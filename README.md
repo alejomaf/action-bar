@@ -227,7 +227,9 @@ Folders are organized **by feature** (not by layer), with shared infrastructure 
 
 ### OAuth setup during development
 
-Until the project ships with a production GitHub OAuth App registration, local builds expect **your own GitHub OAuth Client ID**:
+Action Bar ships with a bundled GitHub OAuth Client ID for the official public build. In most cases, you can sign in without configuring anything manually.
+
+If you are developing a fork or want to override the public app registration, you can still provide **your own GitHub OAuth Client ID**:
 
 1. Create a GitHub OAuth App.
 2. Copy its **Client ID**.

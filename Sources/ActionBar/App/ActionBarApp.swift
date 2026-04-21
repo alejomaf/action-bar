@@ -3,6 +3,10 @@ import SwiftUI
 
 @main
 struct ActionBarApp: App {
+    private enum WindowID {
+        static let settings = "settings"
+    }
+
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = AppStore()
 
@@ -14,9 +18,10 @@ struct ActionBarApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Settings {
+        Window("Settings", id: WindowID.settings) {
             SettingsView(store: store)
         }
+        .defaultSize(width: 520, height: 400)
     }
 }
 

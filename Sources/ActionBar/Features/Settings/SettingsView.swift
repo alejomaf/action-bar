@@ -59,7 +59,7 @@ struct SettingsView: View {
 
                 Section("Account") {
                     TextField(
-                        "GitHub OAuth Client ID",
+                        "GitHub OAuth Client ID Override",
                         text: Binding(
                             get: { store.gitHubOAuthClientID },
                             set: { store.updateGitHubOAuthClientID($0) }
@@ -67,7 +67,7 @@ struct SettingsView: View {
                     )
                     .textFieldStyle(.roundedBorder)
 
-                    Text("Register a GitHub OAuth App and paste its Client ID here. No client secret is required for Device Flow.")
+                    Text("Action Bar now ships with a default GitHub OAuth Client ID. Only change this field if you want to override it for local development or your own fork. No client secret is required for Device Flow.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 

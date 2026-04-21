@@ -2,6 +2,11 @@ import AppKit
 import SwiftUI
 
 struct MenuBarPanel: View {
+    private enum WindowID {
+        static let settings = "settings"
+    }
+
+    @Environment(\.openWindow) private var openWindow
     let store: AppStore
 
     var body: some View {
@@ -16,6 +21,7 @@ struct MenuBarPanel: View {
                     description: Text("Add repositories and sign in to GitHub to see runs here.")
                 )
                 .padding()
+                .frame(minHeight: 170)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
@@ -29,7 +35,7 @@ struct MenuBarPanel: View {
                     }
                     .padding(16)
                 }
-                .frame(maxHeight: 420)
+                .frame(minHeight: 220, maxHeight: 420)
             }
 
             Divider()
@@ -51,21 +57,16 @@ struct MenuBarPanel: View {
 
             Spacer(minLength: 0)
 
-            Button {
+            HeaderActionButton(systemName: "arrow.clockwise", helpText: "Refresh") {
                 Task {
                     await store.refresh()
                 }
-            } label: {
-                Image(systemName: "arrow.clockwise")
             }
-            .buttonStyle(.borderless)
-            .help("Refresh")
 
-            SettingsLink {
-                Image(systemName: "gearshape")
+            HeaderActionButton(systemName: "gearshape", helpText: "Settings") {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: WindowID.settings)
             }
-            .buttonStyle(.borderless)
-            .help("Settings")
         }
         .padding(16)
     }
@@ -97,6 +98,28 @@ struct MenuBarPanel: View {
         }
 
         return "Updated \(lastRefresh.relativeDescription(referenceDate: .now))"
+    }
+}
+
+private struct HeaderActionButton: View {
+    let systemName: String
+    let helpText: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(.quaternary.opacity(0.35))
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(helpText)
     }
 }
 

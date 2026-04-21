@@ -5,6 +5,10 @@ struct SettingsStore {
         static let gitHubOAuthClientID = "gitHubOAuthClientID"
     }
 
+    private enum Defaults {
+        static let bundledGitHubOAuthClientID = "Ov23lixkwTAIlYy2wLsN"
+    }
+
     private let defaults: UserDefaults
     private let environment: [String: String]
 
@@ -22,7 +26,12 @@ struct SettingsStore {
             return storedValue
         }
 
-        return environment["ACTION_BAR_GITHUB_CLIENT_ID"] ?? ""
+        if let environmentValue = environment["ACTION_BAR_GITHUB_CLIENT_ID"],
+           !environmentValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return environmentValue
+        }
+
+        return Defaults.bundledGitHubOAuthClientID
     }
 
     func saveGitHubOAuthClientID(_ clientID: String) {
