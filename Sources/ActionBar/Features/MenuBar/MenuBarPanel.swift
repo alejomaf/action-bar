@@ -19,6 +19,9 @@ struct MenuBarPanel: View {
         }
         .frame(width: 380)
         .background(.regularMaterial)
+        .onAppear {
+            store.resumeGitHubDevicePollingIfNeeded()
+        }
     }
 
     // MARK: - Header

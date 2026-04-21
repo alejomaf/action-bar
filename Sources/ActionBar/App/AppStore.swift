@@ -57,7 +57,7 @@ final class AppStore {
         self.poller = poller
 
         let persistedRepositories = repositoryRegistry.load()
-        repositories = persistedRepositories.isEmpty ? Repository.previewDefaults : persistedRepositories
+        repositories = persistedRepositories
         runGroups = []
         dataMode = .preview
         gitHubOAuthClientID = settingsStore.loadGitHubOAuthClientID()
@@ -164,6 +164,31 @@ final class AppStore {
         }
     }
 
+    /// Resumes polling silently when the panel is reopened during the device flow.
+    /// Unlike `retryGitHubDevicePolling`, this is a no-op if a task is already running
+    /// or if the device authorization has expired.
+    func resumeGitHubDevicePollingIfNeeded() {
+        guard let authorization = activeDeviceAuthorization else { return }
+        guard !isAuthenticating else { return }
+        guard authorization.expiresAt > .now else {
+            activeDeviceAuthorization = nil
+            authErrorMessage = GitHubAuthError.expiredDeviceCode.localizedDescription
+            return
+        }
+
+        let clientID = gitHubOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clientID.isEmpty else { return }
+
+        authErrorMessage = nil
+        authStatusMessage = "Checking with GitHub..."
+        isAuthenticating = true
+
+        signInTask = Task { [weak self] in
+            guard let self else { return }
+            await self.pollForAccessToken(clientID: clientID, authorization: authorization)
+        }
+    }
+
     private func pollForAccessToken(clientID: String, authorization: GitHubDeviceAuthorization) async {
         do {
             let authSession = try await authService.awaitAccessToken(clientID: clientID, authorization: authorization)
@@ -225,7 +250,10 @@ final class AppStore {
 
     func addRepository(from input: String) throws {
         let repository = try Repository(validating: input)
+        addRepository(repository)
+    }
 
+    func addRepository(_ repository: Repository) {
         guard !repositories.contains(where: { $0.id == repository.id }) else {
             return
         }
@@ -239,6 +267,10 @@ final class AppStore {
         }
     }
 
+    func fetchUserRepositories() async throws -> [GitHubRepositorySummary] {
+        try await client.fetchUserRepositories()
+    }
+
     func removeRepository(_ repository: Repository) {
         repositories.removeAll { $0.id == repository.id }
         repositoryRegistry.save(repositories)
@@ -249,8 +281,11 @@ final class AppStore {
         }
     }
 
-    func restorePreviewRepositories() {
-        repositories = Repository.previewDefaults
+    func restoreExampleRepositories() {
+        for repository in Repository.previewDefaults where !repositories.contains(where: { $0.id == repository.id }) {
+            repositories.append(repository)
+        }
+        repositories.sort { $0.fullName.localizedCaseInsensitiveCompare($1.fullName) == .orderedAscending }
         repositoryRegistry.save(repositories)
 
         Task {

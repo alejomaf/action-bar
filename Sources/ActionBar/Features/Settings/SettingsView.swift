@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var repositoryInput = ""
     @State private var repositoryInputError: String?
     @State private var showAdvanced = false
+    @State private var showRepositoryPicker = false
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,9 @@ struct SettingsView: View {
             .navigationTitle("Settings")
         }
         .frame(minWidth: 540, minHeight: 460)
+        .sheet(isPresented: $showRepositoryPicker) {
+            RepositoryPickerView(store: store)
+        }
     }
 
     // MARK: - Account
@@ -131,8 +135,26 @@ struct SettingsView: View {
                     .foregroundStyle(.red)
             }
 
+            HStack {
+                Button {
+                    showRepositoryPicker = true
+                } label: {
+                    Label("Browse my GitHub repos", systemImage: "magnifyingglass")
+                }
+                .disabled(!store.isSignedInToGitHub)
+                .help(store.isSignedInToGitHub ? "Pick from repositories you can access" : "Sign in to browse your repositories")
+
+                Spacer(minLength: 0)
+
+                if !store.isSignedInToGitHub {
+                    Text("Sign in to browse")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             if store.repositories.isEmpty {
-                Text("No tracked repositories yet.")
+                Text("No tracked repositories yet. Add one above or browse your GitHub repos.")
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(store.repositories) { repository in
@@ -158,8 +180,8 @@ struct SettingsView: View {
             }
 
             HStack {
-                Button("Restore defaults") {
-                    store.restorePreviewRepositories()
+                Button("Add example repos") {
+                    store.restoreExampleRepositories()
                     repositoryInputError = nil
                 }
                 Spacer(minLength: 0)
@@ -267,5 +289,144 @@ private struct AccountAvatar: View {
         Image("logo", bundle: .module)
             .resizable()
             .scaledToFill()
+    }
+}
+
+// MARK: - Repository picker
+
+struct RepositoryPickerView: View {
+    let store: AppStore
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var allRepositories: [GitHubRepositorySummary] = []
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+    @State private var search = ""
+
+    private var trackedIDs: Set<String> {
+        Set(store.repositories.map(\.id))
+    }
+
+    private var filteredRepositories: [GitHubRepositorySummary] {
+        let trimmed = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return allRepositories }
+        return allRepositories.filter {
+            $0.fullName.lowercased().contains(trimmed) ||
+            ($0.description ?? "").lowercased().contains(trimmed)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if isLoading && allRepositories.isEmpty {
+                    ProgressView("Loading your repositories...")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.largeTitle)
+                            .foregroundStyle(.orange)
+                        Text(errorMessage)
+                            .multilineTextAlignment(.center)
+                            .font(.callout)
+                        Button("Try again") { Task { await load() } }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    .padding(40)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    List(filteredRepositories) { repo in
+                        RepositoryPickerRow(
+                            repo: repo,
+                            isTracked: trackedIDs.contains(repo.id),
+                            onAdd: { store.addRepository(repo.repository) }
+                        )
+                    }
+                    .listStyle(.inset)
+                    .searchable(text: $search, placement: .toolbar, prompt: "Filter repositories")
+                }
+            }
+            .navigationTitle("Add a repository")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        Task { await load() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .disabled(isLoading)
+                    .help("Reload")
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 460)
+        .task {
+            if allRepositories.isEmpty {
+                await load()
+            }
+        }
+    }
+
+    private func load() async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            let repos = try await store.fetchUserRepositories()
+            allRepositories = repos.sorted { lhs, rhs in
+                (lhs.updatedAt ?? .distantPast) > (rhs.updatedAt ?? .distantPast)
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private struct RepositoryPickerRow: View {
+    let repo: GitHubRepositorySummary
+    let isTracked: Bool
+    let onAdd: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: repo.isPrivate ? "lock" : (repo.isFork ? "tuningfork" : "book.closed"))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(repo.fullName)
+                    .font(.subheadline.weight(.medium))
+                if let description = repo.description, !description.isEmpty {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if isTracked {
+                Label("Added", systemImage: "checkmark")
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.green)
+                    .help("Already tracking")
+            } else {
+                Button {
+                    onAdd()
+                } label: {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(.tint)
+                }
+                .buttonStyle(.plain)
+                .help("Add")
+            }
+        }
+        .padding(.vertical, 2)
     }
 }

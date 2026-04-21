@@ -30,6 +30,19 @@ enum GitHubClientError: LocalizedError, Sendable {
     }
 }
 
+struct GitHubRepositorySummary: Identifiable, Hashable, Sendable {
+    let owner: String
+    let name: String
+    let isPrivate: Bool
+    let isFork: Bool
+    let description: String?
+    let updatedAt: Date?
+
+    var id: String { "\(owner.lowercased())/\(name.lowercased())" }
+    var fullName: String { "\(owner)/\(name)" }
+    var repository: Repository { Repository(owner: owner, name: name) }
+}
+
 actor GitHubClient {
     private enum Constants {
         static let perRepositoryLimit = 10
@@ -49,6 +62,41 @@ actor GitHubClient {
         jsonDecoder = JSONDecoder()
         jsonDecoder.keyDecodingStrategy = .convertFromSnakeCase
         jsonDecoder.dateDecodingStrategy = .iso8601
+    }
+
+    func fetchUserRepositories(limit: Int = 100) async throws -> [GitHubRepositorySummary] {
+        guard let authSession = try await authService.loadSession() else {
+            throw GitHubClientError.missingAuthentication
+        }
+
+        var components = URLComponents(string: "https://api.github.com/user/repos")!
+        components.queryItems = [
+            URLQueryItem(name: "per_page", value: String(min(max(limit, 1), 100))),
+            URLQueryItem(name: "sort", value: "updated"),
+            URLQueryItem(name: "affiliation", value: "owner,collaborator,organization_member"),
+        ]
+
+        var request = URLRequest(url: components.url!)
+        request.httpMethod = "GET"
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("Bearer \(authSession.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GitHubClientError.invalidResponse
+        }
+
+        switch httpResponse.statusCode {
+        case 200:
+            let payload = try jsonDecoder.decode([UserRepositoryPayload].self, from: data)
+            return payload.map { $0.summary }
+        case 401:
+            try? await authService.signOut()
+            throw GitHubAuthError.invalidToken
+        default:
+            throw GitHubClientError.unexpectedStatusCode(httpResponse.statusCode)
+        }
     }
 
     func fetchRecentRuns(for repositories: [Repository]) async throws -> WorkflowSnapshot {
@@ -219,6 +267,30 @@ private struct WorkflowRunPayload: Decodable {
 
 private struct ActorPayload: Decodable {
     let login: String
+}
+
+private struct UserRepositoryPayload: Decodable {
+    let name: String
+    let owner: OwnerPayload
+    let `private`: Bool
+    let fork: Bool
+    let description: String?
+    let updatedAt: Date?
+
+    struct OwnerPayload: Decodable {
+        let login: String
+    }
+
+    var summary: GitHubRepositorySummary {
+        GitHubRepositorySummary(
+            owner: owner.login,
+            name: name,
+            isPrivate: self.private,
+            isFork: fork,
+            description: description,
+            updatedAt: updatedAt
+        )
+    }
 }
 
 private extension GitHubRateLimit {
