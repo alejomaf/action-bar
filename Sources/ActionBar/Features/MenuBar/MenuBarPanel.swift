@@ -42,7 +42,11 @@ struct MenuBarPanel: View {
 
             Spacer(minLength: 0)
 
-            HeaderActionButton(systemName: "arrow.clockwise", helpText: "Refresh now") {
+            HeaderActionButton(
+                systemName: "arrow.clockwise",
+                helpText: "Refresh now",
+                isSpinning: store.isRefreshing
+            ) {
                 Task { await store.refresh() }
             }
 
@@ -63,6 +67,25 @@ struct MenuBarPanel: View {
 
     // MARK: - Content
 
+    private static let maxRunsPerRepo = 3
+
+    private var activeRuns: [ActiveRunEntry] {
+        store.runGroups.flatMap { group in
+            group.runs
+                .filter(\.isActive)
+                .map { ActiveRunEntry(run: $0, repository: group.repository) }
+        }
+        .sorted { $0.run.sortDate > $1.run.sortDate }
+    }
+
+    private var trimmedGroups: [RepositoryRunGroup] {
+        store.runGroups.compactMap { group in
+            let recent = group.runs.prefix(Self.maxRunsPerRepo)
+            guard !recent.isEmpty else { return nil }
+            return RepositoryRunGroup(repository: group.repository, runs: Array(recent))
+        }
+    }
+
     @ViewBuilder
     private var content: some View {
         if store.activeDeviceAuthorization != nil || store.isAuthenticating {
@@ -75,19 +98,27 @@ struct MenuBarPanel: View {
             EmptyRepositoriesView(openSettings: openSettings)
                 .frame(minHeight: 180)
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 16) {
-                    if store.dataMode == .preview {
-                        PreviewBanner()
-                    }
+            // Re-render every second so live timestamps stay fresh while the panel is open.
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 16) {
+                        if store.dataMode == .preview {
+                            PreviewBanner()
+                        }
 
-                    ForEach(store.runGroups) { group in
-                        RepositorySection(group: group)
+                        let active = activeRuns
+                        if !active.isEmpty {
+                            ActiveRunsSection(entries: active, referenceDate: context.date)
+                        }
+
+                        ForEach(trimmedGroups) { group in
+                            RepositorySection(group: group, referenceDate: context.date)
+                        }
                     }
+                    .padding(16)
                 }
-                .padding(16)
+                .frame(minHeight: 220, maxHeight: 420)
             }
-            .frame(minHeight: 220, maxHeight: 420)
         }
     }
 
@@ -103,7 +134,9 @@ struct MenuBarPanel: View {
             }
 
             HStack(spacing: 6) {
-                Text(lastRefreshText)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(lastRefreshText(referenceDate: context.date))
+                }
                 if let rateLimit = store.rateLimit {
                     Text("·")
                     Text("API \(rateLimit.remaining)/\(rateLimit.limit)")
@@ -136,11 +169,11 @@ struct MenuBarPanel: View {
         .padding(.vertical, 10)
     }
 
-    private var lastRefreshText: String {
+    private func lastRefreshText(referenceDate: Date = .now) -> String {
         guard let lastRefresh = store.lastRefresh else {
             return "Not refreshed yet"
         }
-        return "Updated \(lastRefresh.relativeDescription(referenceDate: .now))"
+        return "Updated \(lastRefresh.relativeDescription(referenceDate: referenceDate))"
     }
 
     private func openSettings() {
@@ -167,13 +200,17 @@ private struct AccountBadge: View {
 private struct HeaderActionButton: View {
     let systemName: String
     let helpText: String
+    var isSpinning: Bool = false
     let action: () -> Void
+
+    @State private var rotation: Double = 0
 
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(rotation))
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
@@ -183,6 +220,17 @@ private struct HeaderActionButton: View {
         }
         .buttonStyle(.plain)
         .help(helpText)
+        .onChange(of: isSpinning) { _, newValue in
+            if newValue {
+                withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
+                    rotation += 360
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.25)) {
+                    rotation = 0
+                }
+            }
+        }
     }
 }
 
@@ -433,8 +481,51 @@ private struct PreviewBanner: View {
 
 // MARK: - Repository sections
 
+struct ActiveRunEntry: Identifiable, Hashable {
+    let run: WorkflowRun
+    let repository: Repository
+    var id: String { "\(repository.id)#\(run.id)" }
+}
+
+private struct ActiveRunsSection: View {
+    let entries: [ActiveRunEntry]
+    let referenceDate: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.fill")
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                Text("Active runs")
+                    .font(.subheadline.weight(.semibold))
+                Text("\(entries.count)")
+                    .font(.caption.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(
+                        Capsule().fill(.tint.opacity(0.18))
+                    )
+                    .foregroundStyle(.tint)
+                Spacer(minLength: 0)
+            }
+
+            VStack(spacing: 8) {
+                ForEach(entries) { entry in
+                    WorkflowRunRow(
+                        run: entry.run,
+                        referenceDate: referenceDate,
+                        repositoryLabel: entry.repository.fullName
+                    )
+                }
+            }
+        }
+    }
+}
+
 private struct RepositorySection: View {
     let group: RepositoryRunGroup
+    let referenceDate: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -461,7 +552,7 @@ private struct RepositorySection: View {
 
             VStack(spacing: 8) {
                 ForEach(group.runs) { run in
-                    WorkflowRunRow(run: run)
+                    WorkflowRunRow(run: run, referenceDate: referenceDate)
                 }
             }
         }
@@ -470,16 +561,40 @@ private struct RepositorySection: View {
 
 private struct WorkflowRunRow: View {
     let run: WorkflowRun
+    let referenceDate: Date
+    var repositoryLabel: String? = nil
+
+    @State private var pulse: Bool = false
+
+    private var subtitle: String {
+        var parts: [String] = []
+        if let repositoryLabel {
+            parts.append(repositoryLabel)
+        }
+        parts.append(run.branch)
+        parts.append(run.actor)
+        parts.append(run.relativeTimestamp(referenceDate: referenceDate))
+        return parts.joined(separator: " · ")
+    }
 
     var body: some View {
         Button {
             NSWorkspace.shared.open(run.htmlURL)
         } label: {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: run.displayState.symbolName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(iconColor)
-                    .frame(width: 20)
+                ZStack {
+                    Image(systemName: run.displayState.symbolName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(iconColor)
+                    if run.isActive {
+                        Circle()
+                            .stroke(iconColor.opacity(0.4), lineWidth: 1.5)
+                            .frame(width: 22, height: 22)
+                            .scaleEffect(pulse ? 1.25 : 1.0)
+                            .opacity(pulse ? 0.0 : 0.8)
+                    }
+                }
+                .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(run.name)
@@ -487,7 +602,7 @@ private struct WorkflowRunRow: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
-                    Text("\(run.branch) · \(run.actor) · \(run.relativeTimestamp())")
+                    Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -509,6 +624,13 @@ private struct WorkflowRunRow: View {
             )
         }
         .buttonStyle(.plain)
+        .onAppear {
+            if run.isActive {
+                withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                    pulse = true
+                }
+            }
+        }
         .contextMenu {
             Button("Open in GitHub") {
                 NSWorkspace.shared.open(run.htmlURL)
