@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SettingsView: View {
@@ -57,8 +58,77 @@ struct SettingsView: View {
                 }
 
                 Section("Account") {
-                    Text("GitHub authentication will use OAuth Device Flow and Keychain-backed tokens.")
-                    Text("This first slice is intentionally read-only and running on preview data.")
+                    TextField(
+                        "GitHub OAuth Client ID",
+                        text: Binding(
+                            get: { store.gitHubOAuthClientID },
+                            set: { store.updateGitHubOAuthClientID($0) }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+
+                    Text("Register a GitHub OAuth App and paste its Client ID here. No client secret is required for Device Flow.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if let account = store.authenticatedAccount {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(account.displayName)
+                                .font(.headline)
+                            Text(account.subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Link("Open GitHub Profile", destination: account.htmlURL)
+                        }
+
+                        Button("Sign Out") {
+                            store.signOutFromGitHub()
+                        }
+                    } else if let authorization = store.activeDeviceAuthorization {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Enter this code on GitHub")
+                                .font(.subheadline.weight(.semibold))
+
+                            Text(authorization.userCode)
+                                .font(.system(.title3, design: .monospaced).weight(.semibold))
+
+                            Link(
+                                "Open GitHub Verification Page",
+                                destination: authorization.verificationURLComplete ?? authorization.verificationURL
+                            )
+
+                            HStack(spacing: 10) {
+                                Button("Copy Code") {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(authorization.userCode, forType: .string)
+                                }
+
+                                Button("Cancel") {
+                                    store.cancelGitHubDeviceFlow()
+                                }
+                            }
+                        }
+                    } else {
+                        Button(store.isAuthenticating ? "Waiting for GitHub..." : "Sign In with GitHub") {
+                            store.startGitHubDeviceFlow()
+                        }
+                        .disabled(!store.hasOAuthClientID || store.isAuthenticating)
+                    }
+
+                    if let authStatusMessage = store.authStatusMessage {
+                        Text(authStatusMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let authErrorMessage = store.authErrorMessage {
+                        Text(authErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    Text("Workflow activity still runs in preview mode until live GraphQL syncing is wired in the next slice.")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }

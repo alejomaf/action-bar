@@ -74,12 +74,21 @@ The runtime requirements are intentionally modern so the codebase can rely on Sw
 
 ## Install
 
-> Pre-built releases are not yet published. Until v0.1 ships, install from source as described below.
+> Pre-built releases are not yet published. Until v0.1 ships, you can still build a local `.app` bundle and install it into `~/Applications`.
 
 Once v0.1 is released:
 
 - **GitHub Releases** — download the latest notarized `.dmg`
 - **Homebrew Cask** *(planned for v0.4)* — `brew install --cask action-bar`
+
+### Local install right now
+
+```bash
+make app
+make install
+```
+
+This produces `dist/ActionBar.app` and installs a local copy to `~/Applications/ActionBar.app`.
 
 ---
 
@@ -98,6 +107,12 @@ To run the test suite:
 
 ```bash
 swift test
+```
+
+To build a local app bundle without installing it:
+
+```bash
+./scripts/build-app.sh
 ```
 
 If you prefer Xcode:
@@ -209,6 +224,23 @@ Folders are organized **by feature** (not by layer), with shared infrastructure 
 - **Sandboxing:** App Sandbox enabled with `com.apple.security.network.client` only.
 - **Distribution:** Hardened Runtime, Developer ID code-signed, notarized via `notarytool` in CI.
 - **Telemetry:** none. No analytics, no crash reporting, no remote configuration.
+
+### OAuth setup during development
+
+Until the project ships with a production GitHub OAuth App registration, local builds expect **your own GitHub OAuth Client ID**:
+
+1. Create a GitHub OAuth App.
+2. Copy its **Client ID**.
+3. Paste it into *Settings → Account* inside Action Bar.
+
+You can also provide it through the environment when launching from source:
+
+```bash
+export ACTION_BAR_GITHUB_CLIENT_ID=your_client_id
+swift run ActionBar
+```
+
+No client secret is stored or needed for Device Flow.
 
 If you find a security issue, please follow [`SECURITY.md`](SECURITY.md) (coming soon) — do not open a public issue.
 

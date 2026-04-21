@@ -16,21 +16,42 @@ final class AppStore {
     var rateLimit: GitHubRateLimit?
     var errorMessage: String?
     var dataMode: DataMode
+    var gitHubOAuthClientID: String
+    var authenticatedAccount: GitHubAccount?
+    var activeDeviceAuthorization: GitHubDeviceAuthorization?
+    var isAuthenticating = false
+    var authErrorMessage: String?
+    var authStatusMessage: String?
 
     var summary: ActivitySummary {
         ActivitySummary(groups: runGroups)
     }
 
+    var isSignedInToGitHub: Bool {
+        authenticatedAccount != nil
+    }
+
+    var hasOAuthClientID: Bool {
+        !gitHubOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private let repositoryRegistry: RepositoryRegistry
+    private let settingsStore: SettingsStore
+    private let authService: GitHubAuthService
     private let client: GitHubClient
     private let poller: RunPoller
+    private var signInTask: Task<Void, Never>?
 
     init(
         repositoryRegistry: RepositoryRegistry = RepositoryRegistry(),
+        settingsStore: SettingsStore = SettingsStore(),
+        authService: GitHubAuthService = GitHubAuthService(),
         client: GitHubClient = GitHubClient(mode: .preview),
         poller: RunPoller = RunPoller()
     ) {
         self.repositoryRegistry = repositoryRegistry
+        self.settingsStore = settingsStore
+        self.authService = authService
         self.client = client
         self.poller = poller
 
@@ -38,8 +59,10 @@ final class AppStore {
         repositories = persistedRepositories.isEmpty ? Repository.previewDefaults : persistedRepositories
         runGroups = []
         dataMode = .preview
+        gitHubOAuthClientID = settingsStore.loadGitHubOAuthClientID()
 
         Task {
+            await restoreAuthenticationState()
             await refresh()
         }
     }
@@ -60,6 +83,78 @@ final class AppStore {
         }
 
         isRefreshing = false
+    }
+
+    func updateGitHubOAuthClientID(_ clientID: String) {
+        gitHubOAuthClientID = clientID
+        settingsStore.saveGitHubOAuthClientID(clientID)
+    }
+
+    func startGitHubDeviceFlow() {
+        let clientID = gitHubOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clientID.isEmpty else {
+            authErrorMessage = GitHubAuthError.missingClientID.localizedDescription
+            return
+        }
+
+        signInTask?.cancel()
+        authErrorMessage = nil
+        authStatusMessage = "Requesting a GitHub device code..."
+        activeDeviceAuthorization = nil
+        isAuthenticating = true
+
+        signInTask = Task {
+            do {
+                let authorization = try await authService.startDeviceAuthorization(clientID: clientID)
+
+                await MainActor.run {
+                    self.activeDeviceAuthorization = authorization
+                    self.authStatusMessage = "Open GitHub, enter the code, and authorize Action Bar."
+                }
+
+                let authSession = try await authService.awaitAccessToken(clientID: clientID, authorization: authorization)
+                let account = try await authService.fetchAuthenticatedAccount(accessToken: authSession.accessToken)
+
+                await MainActor.run {
+                    self.authenticatedAccount = account
+                    self.activeDeviceAuthorization = nil
+                    self.isAuthenticating = false
+                    self.authErrorMessage = nil
+                    self.authStatusMessage = "Signed in as \(account.login)."
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self.activeDeviceAuthorization = nil
+                    self.isAuthenticating = false
+                    self.authStatusMessage = "GitHub sign-in canceled."
+                }
+            } catch {
+                await MainActor.run {
+                    self.activeDeviceAuthorization = nil
+                    self.isAuthenticating = false
+                    self.authErrorMessage = error.localizedDescription
+                    self.authStatusMessage = nil
+                }
+            }
+        }
+    }
+
+    func cancelGitHubDeviceFlow() {
+        signInTask?.cancel()
+    }
+
+    func signOutFromGitHub() {
+        signInTask?.cancel()
+
+        Task {
+            try? await authService.signOut()
+        }
+
+        authenticatedAccount = nil
+        activeDeviceAuthorization = nil
+        isAuthenticating = false
+        authErrorMessage = nil
+        authStatusMessage = "Signed out."
     }
 
     func addRepository(from input: String) throws {
@@ -108,5 +203,22 @@ final class AppStore {
         lastRefresh = snapshot.fetchedAt
         rateLimit = snapshot.rateLimit
         dataMode = snapshot.dataMode
+    }
+
+    private func restoreAuthenticationState() async {
+        do {
+            guard let session = try await authService.loadSession() else {
+                authStatusMessage = "Add a GitHub OAuth Client ID to enable sign-in."
+                return
+            }
+
+            let account = try await authService.fetchAuthenticatedAccount(accessToken: session.accessToken)
+            authenticatedAccount = account
+            authStatusMessage = "Signed in as \(account.login)."
+        } catch {
+            try? await authService.signOut()
+            authenticatedAccount = nil
+            authErrorMessage = error.localizedDescription
+        }
     }
 }
