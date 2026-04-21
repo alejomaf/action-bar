@@ -13,31 +13,7 @@ struct MenuBarPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-
-            if store.runGroups.isEmpty {
-                ContentUnavailableView(
-                    "No workflow activity yet",
-                    systemImage: "bolt.slash",
-                    description: Text("Add repositories and sign in to GitHub to see runs here.")
-                )
-                .padding()
-                .frame(minHeight: 170)
-            } else {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        if store.dataMode == .preview {
-                            PreviewBanner()
-                        }
-
-                        ForEach(store.runGroups) { group in
-                            RepositorySection(group: group)
-                        }
-                    }
-                    .padding(16)
-                }
-                .frame(minHeight: 220, maxHeight: 420)
-            }
-
+            content
             Divider()
             footer
         }
@@ -45,59 +21,165 @@ struct MenuBarPanel: View {
         .background(.regularMaterial)
     }
 
+    // MARK: - Header
+
     private var header: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Action Bar")
+        HStack(alignment: .center, spacing: 12) {
+            AccountBadge(account: store.authenticatedAccount)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(headerTitle)
                     .font(.headline)
+                    .lineLimit(1)
                 Text(store.summary.headline)
-                    .font(.subheadline)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 0)
 
-            HeaderActionButton(systemName: "arrow.clockwise", helpText: "Refresh") {
-                Task {
-                    await store.refresh()
-                }
+            HeaderActionButton(systemName: "arrow.clockwise", helpText: "Refresh now") {
+                Task { await store.refresh() }
             }
 
-            HeaderActionButton(systemName: "gearshape", helpText: "Settings") {
-                NSApp.activate(ignoringOtherApps: true)
-                openWindow(id: WindowID.settings)
+            HeaderActionButton(systemName: "gearshape", helpText: "Open Settings") {
+                openSettings()
             }
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
+    private var headerTitle: String {
+        if let account = store.authenticatedAccount {
+            return account.displayName
+        }
+        return "Action Bar"
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder
+    private var content: some View {
+        if store.activeDeviceAuthorization != nil || store.isAuthenticating {
+            DeviceFlowCard(store: store)
+                .padding(16)
+        } else if !store.isSignedInToGitHub {
+            SignInCard(store: store, openSettings: openSettings)
+                .padding(16)
+        } else if store.runGroups.isEmpty {
+            EmptyRepositoriesView(openSettings: openSettings)
+                .frame(minHeight: 180)
+        } else {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    if store.dataMode == .preview {
+                        PreviewBanner()
+                    }
+
+                    ForEach(store.runGroups) { group in
+                        RepositorySection(group: group)
+                    }
+                }
+                .padding(16)
+            }
+            .frame(minHeight: 220, maxHeight: 420)
+        }
+    }
+
+    // MARK: - Footer
+
     private var footer: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             if let errorMessage = store.errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
                     .font(.caption)
+                    .lineLimit(2)
             }
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text(lastRefreshText)
-                Spacer(minLength: 0)
                 if let rateLimit = store.rateLimit {
-                    Text("Rate \(rateLimit.remaining)/\(rateLimit.limit)")
+                    Text("·")
+                    Text("API \(rateLimit.remaining)/\(rateLimit.limit)")
                 }
+                Spacer(minLength: 0)
             }
             .font(.caption)
             .foregroundStyle(.secondary)
+
+            HStack(spacing: 14) {
+                FooterLink(title: "Settings", systemName: "gearshape") {
+                    openSettings()
+                }
+
+                FooterLink(title: "GitHub", systemName: "arrow.up.right.square") {
+                    if let url = URL(string: "https://github.com") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+
+                Spacer(minLength: 0)
+
+                FooterLink(title: "Quit", systemName: "power") {
+                    NSApp.terminate(nil)
+                }
+            }
+            .font(.caption)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     private var lastRefreshText: String {
         guard let lastRefresh = store.lastRefresh else {
             return "Not refreshed yet"
         }
-
         return "Updated \(lastRefresh.relativeDescription(referenceDate: .now))"
+    }
+
+    private func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        openWindow(id: WindowID.settings)
+    }
+}
+
+// MARK: - Header pieces
+
+private struct AccountBadge: View {
+    let account: GitHubAccount?
+
+    var body: some View {
+        Group {
+            if let account, let url = account.avatarURL {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFill()
+                    default:
+                        placeholder
+                    }
+                }
+            } else {
+                placeholder
+            }
+        }
+        .frame(width: 32, height: 32)
+        .clipShape(Circle())
+        .overlay(
+            Circle().strokeBorder(.quaternary, lineWidth: 0.5)
+        )
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            Circle().fill(.quaternary.opacity(0.5))
+            Image(systemName: account == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle")
+                .font(.system(size: 16))
+                .foregroundStyle(.secondary)
+        }
     }
 }
 
@@ -109,11 +191,11 @@ private struct HeaderActionButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 16, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 32, height: 32)
+                .frame(width: 28, height: 28)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(.quaternary.opacity(0.35))
                 )
                 .contentShape(Rectangle())
@@ -122,6 +204,27 @@ private struct HeaderActionButton: View {
         .help(helpText)
     }
 }
+
+private struct FooterLink: View {
+    let title: String
+    let systemName: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: systemName)
+                Text(title)
+            }
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(title)
+    }
+}
+
+// MARK: - Status bar label
 
 struct StatusBarLabel: View {
     let summary: ActivitySummary
@@ -143,26 +246,176 @@ struct StatusBarLabel: View {
     }
 }
 
+// MARK: - Sign-in / Device flow cards
+
+private struct SignInCard: View {
+    let store: AppStore
+    let openSettings: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "lock.shield")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connect to GitHub")
+                        .font(.subheadline.weight(.semibold))
+                    Text("Sign in to see live workflow runs from your repos.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Button {
+                store.startGitHubDeviceFlow()
+            } label: {
+                HStack {
+                    Image(systemName: "person.badge.key")
+                    Text("Sign in with GitHub")
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .controlSize(.large)
+            .buttonStyle(.borderedProminent)
+            .disabled(!store.hasOAuthClientID || store.isAuthenticating)
+
+            if let authErrorMessage = store.authErrorMessage {
+                Label(authErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            HStack {
+                Text("Showing preview data meanwhile")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                Button("Advanced", action: openSettings)
+                    .buttonStyle(.plain)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct DeviceFlowCard: View {
+    let store: AppStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "key.horizontal")
+                    .foregroundStyle(.tint)
+                Text("Authorize Action Bar on GitHub")
+                    .font(.subheadline.weight(.semibold))
+            }
+
+            if let authorization = store.activeDeviceAuthorization {
+                Text(authorization.userCode)
+                    .font(.system(.title, design: .monospaced).weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(.quaternary.opacity(0.4))
+                    )
+
+                HStack(spacing: 8) {
+                    Button {
+                        let url = authorization.verificationURLComplete ?? authorization.verificationURL
+                        NSWorkspace.shared.open(url)
+                    } label: {
+                        Label("Open GitHub", systemImage: "arrow.up.right.square")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(authorization.userCode, forType: .string)
+                    } label: {
+                        Label("Copy Code", systemImage: "doc.on.doc")
+                    }
+                }
+
+                Text("Paste the code on the verification page, then come back here. Action Bar will detect it automatically.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let status = store.authStatusMessage {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(status)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Button("Cancel sign-in") {
+                store.cancelGitHubDeviceFlow()
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .font(.caption)
+        }
+    }
+}
+
+private struct EmptyRepositoriesView: View {
+    let openSettings: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 32))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 4) {
+                Text("No repositories yet")
+                    .font(.subheadline.weight(.semibold))
+                Text("Add the repos you care about to follow their GitHub Actions here.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button {
+                openSettings()
+            } label: {
+                Label("Add Repository", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.regular)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+    }
+}
+
 private struct PreviewBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles.rectangle.stack")
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Preview fallback")
-                    .font(.subheadline.weight(.semibold))
-                Text("Sign in with GitHub to switch this panel from sample activity to live workflow runs.")
-                    .font(.caption)
+                Text("Preview data")
+                    .font(.caption.weight(.semibold))
+                Text("Showing sample runs while live data loads.")
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(12)
+        .padding(10)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(.quaternary.opacity(0.5))
         )
     }
 }
+
+// MARK: - Repository sections
 
 private struct RepositorySection: View {
     let group: RepositoryRunGroup
@@ -172,12 +425,22 @@ private struct RepositorySection: View {
             HStack(spacing: 8) {
                 Text(group.repository.fullName)
                     .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
                 Spacer(minLength: 0)
-                if let activeRun = group.runs.first(where: \.isActive) {
-                    Text(activeRun.relativeTimestamp())
+
+                Button {
+                    if let url = URL(string: "https://github.com/\(group.repository.fullName)/actions") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Image(systemName: "arrow.up.right.square")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+                .buttonStyle(.plain)
+                .help("Open Actions on GitHub")
             }
 
             VStack(spacing: 8) {
@@ -206,10 +469,12 @@ private struct WorkflowRunRow: View {
                     Text(run.name)
                         .font(.subheadline.weight(.medium))
                         .foregroundStyle(.primary)
+                        .lineLimit(1)
 
                     Text("\(run.branch) · \(run.actor) · \(run.relativeTimestamp())")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
 
                 Spacer(minLength: 0)
