@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 
@@ -111,28 +112,21 @@ final class AppStore {
         activeDeviceAuthorization = nil
         isAuthenticating = true
 
-        signInTask = Task {
+        signInTask = Task { [weak self] in
+            guard let self else { return }
             do {
-                let authorization = try await authService.startDeviceAuthorization(clientID: clientID)
+                let authorization = try await self.authService.startDeviceAuthorization(clientID: clientID)
 
                 await MainActor.run {
                     self.activeDeviceAuthorization = authorization
-                    self.authStatusMessage = "Open GitHub, enter the code, and authorize Action Bar."
+                    self.authStatusMessage = "Waiting for you to authorize Action Bar on GitHub..."
+                    // Auto-open the browser with the code pre-filled so the user
+                    // doesn't have to click another button (which would dismiss the panel).
+                    let url = authorization.verificationURLComplete ?? authorization.verificationURL
+                    NSWorkspace.shared.open(url)
                 }
 
-                let authSession = try await authService.awaitAccessToken(clientID: clientID, authorization: authorization)
-                let account = try await authService.fetchAuthenticatedAccount(accessToken: authSession.accessToken)
-
-                await MainActor.run {
-                    self.authenticatedAccount = account
-                    self.activeDeviceAuthorization = nil
-                    self.isAuthenticating = false
-                    self.authErrorMessage = nil
-                    self.authStatusMessage = "Signed in as \(account.login)."
-                    Task {
-                        await self.refresh()
-                    }
-                }
+                await self.pollForAccessToken(clientID: clientID, authorization: authorization)
             } catch is CancellationError {
                 await MainActor.run {
                     self.activeDeviceAuthorization = nil
@@ -145,6 +139,63 @@ final class AppStore {
                     self.isAuthenticating = false
                     self.authErrorMessage = error.localizedDescription
                     self.authStatusMessage = nil
+                }
+            }
+        }
+    }
+
+    func retryGitHubDevicePolling() {
+        guard let authorization = activeDeviceAuthorization else {
+            startGitHubDeviceFlow()
+            return
+        }
+
+        let clientID = gitHubOAuthClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clientID.isEmpty else { return }
+
+        signInTask?.cancel()
+        authErrorMessage = nil
+        authStatusMessage = "Checking with GitHub..."
+        isAuthenticating = true
+
+        signInTask = Task { [weak self] in
+            guard let self else { return }
+            await self.pollForAccessToken(clientID: clientID, authorization: authorization)
+        }
+    }
+
+    private func pollForAccessToken(clientID: String, authorization: GitHubDeviceAuthorization) async {
+        do {
+            let authSession = try await authService.awaitAccessToken(clientID: clientID, authorization: authorization)
+            let account = try await authService.fetchAuthenticatedAccount(accessToken: authSession.accessToken)
+
+            await MainActor.run {
+                self.authenticatedAccount = account
+                self.activeDeviceAuthorization = nil
+                self.isAuthenticating = false
+                self.authErrorMessage = nil
+                self.authStatusMessage = "Signed in as \(account.login)."
+                NSApp.activate(ignoringOtherApps: true)
+                Task {
+                    await self.refresh()
+                }
+            }
+        } catch is CancellationError {
+            await MainActor.run {
+                self.isAuthenticating = false
+                self.authStatusMessage = "Polling paused. Click \"Check now\" to resume."
+            }
+        } catch {
+            // Keep the device authorization visible so the user can retry without
+            // losing the code they may have already pasted on GitHub.
+            await MainActor.run {
+                self.isAuthenticating = false
+                self.authErrorMessage = error.localizedDescription
+                self.authStatusMessage = nil
+
+                // If the device code itself expired, drop it so the user can start over.
+                if case GitHubAuthError.expiredDeviceCode = error {
+                    self.activeDeviceAuthorization = nil
                 }
             }
         }

@@ -337,13 +337,48 @@ private struct DeviceFlowCard: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(authorization.userCode, forType: .string)
                     } label: {
-                        Label("Copy Code", systemImage: "doc.on.doc")
+                        Label("Copy", systemImage: "doc.on.doc")
                     }
                 }
 
-                Text("Paste the code on the verification page, then come back here. Action Bar will detect it automatically.")
-                    .font(.caption)
+                if store.isAuthenticating {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(store.authStatusMessage ?? "Waiting for GitHub...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                } else {
+                    Text("Action Bar will detect the authorization automatically. If you already authorized, tap \"Check now\".")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if let authErrorMessage = store.authErrorMessage {
+                    Label(authErrorMessage, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .lineLimit(3)
+                }
+
+                HStack(spacing: 12) {
+                    Button {
+                        store.retryGitHubDevicePolling()
+                    } label: {
+                        Label("Check now", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(store.isAuthenticating)
+
+                    Spacer(minLength: 0)
+
+                    Button("Cancel") {
+                        store.cancelGitHubDeviceFlow()
+                    }
+                    .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
+                    .font(.caption)
+                }
             } else if let status = store.authStatusMessage {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -351,14 +386,14 @@ private struct DeviceFlowCard: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-            }
 
-            Button("Cancel sign-in") {
-                store.cancelGitHubDeviceFlow()
+                Button("Cancel") {
+                    store.cancelGitHubDeviceFlow()
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .font(.caption)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .font(.caption)
         }
     }
 }

@@ -68,6 +68,11 @@ struct SettingsView: View {
                             NSPasteboard.general.setString(authorization.userCode, forType: .string)
                         }
 
+                        Button("Check now") {
+                            store.retryGitHubDevicePolling()
+                        }
+                        .disabled(store.isAuthenticating)
+
                         Button("Cancel") {
                             store.cancelGitHubDeviceFlow()
                         }
