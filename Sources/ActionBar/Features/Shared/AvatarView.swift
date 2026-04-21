@@ -44,11 +44,10 @@ final class AvatarImageCache {
     }
 }
 
-/// Renders a remote avatar image using `AvatarImageCache`. Falls back to the
-/// bundled logo while loading or when the URL is missing/unreachable.
+/// Renders a remote avatar image using `AvatarImageCache`. Falls back to a
+/// branded "AB" monogram while loading or when there is no URL.
 struct RemoteAvatar: View {
     let url: URL?
-    var fallbackImage: NSImage? = AvatarImageCache.bundledLogo
 
     @State private var image: NSImage?
 
@@ -58,12 +57,8 @@ struct RemoteAvatar: View {
                 Image(nsImage: image)
                     .resizable()
                     .scaledToFill()
-            } else if let fallbackImage {
-                Image(nsImage: fallbackImage)
-                    .resizable()
-                    .scaledToFill()
             } else {
-                Color(nsColor: .quaternaryLabelColor)
+                MonogramAvatar()
             }
         }
         .task(id: url) {
@@ -84,6 +79,31 @@ struct RemoteAvatar: View {
 
         if let loaded = await AvatarImageCache.shared.load(url) {
             image = loaded
+        }
+    }
+}
+
+/// Branded "AB" monogram used as a placeholder when no avatar is available.
+struct MonogramAvatar: View {
+    var body: some View {
+        GeometryReader { proxy in
+            let size = min(proxy.size.width, proxy.size.height)
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.36, green: 0.45, blue: 0.95),
+                        Color(red: 0.55, green: 0.30, blue: 0.85),
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                Text("AB")
+                    .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .kerning(-0.5)
+                    .shadow(color: .black.opacity(0.18), radius: 1, x: 0, y: 1)
+            }
         }
     }
 }
