@@ -6,6 +6,13 @@ struct GitHubAccount: Codable, Equatable, Sendable {
     let avatarURL: URL?
     let htmlURL: URL
 
+    enum CodingKeys: String, CodingKey {
+        case login
+        case name
+        case avatarURL = "avatarUrl"
+        case htmlURL = "htmlUrl"
+    }
+
     var displayName: String {
         name?.isEmpty == false ? name! : login
     }

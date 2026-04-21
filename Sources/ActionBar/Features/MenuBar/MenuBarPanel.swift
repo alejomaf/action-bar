@@ -174,12 +174,9 @@ private struct AccountBadge: View {
     }
 
     private var placeholder: some View {
-        ZStack {
-            Circle().fill(.quaternary.opacity(0.5))
-            Image(systemName: account == nil ? "person.crop.circle.badge.questionmark" : "person.crop.circle")
-                .font(.system(size: 16))
-                .foregroundStyle(.secondary)
-        }
+        Image("logo", bundle: .module)
+            .resizable()
+            .scaledToFill()
     }
 }
 

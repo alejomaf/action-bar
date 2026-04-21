@@ -264,11 +264,8 @@ private struct AccountAvatar: View {
     }
 
     private var placeholder: some View {
-        ZStack {
-            Circle().fill(.quaternary.opacity(0.5))
-            Image(systemName: "person.crop.circle")
-                .font(.system(size: size * 0.55))
-                .foregroundStyle(.secondary)
-        }
+        Image("logo", bundle: .module)
+            .resizable()
+            .scaledToFill()
     }
 }

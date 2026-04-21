@@ -16,7 +16,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ActionBar",
-            path: "Sources/ActionBar"
+            path: "Sources/ActionBar",
+            resources: [
+                .process("Resources"),
+            ]
         ),
         .testTarget(
             name: "ActionBarTests",
