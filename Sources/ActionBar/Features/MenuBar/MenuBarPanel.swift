@@ -126,9 +126,9 @@ private struct PreviewBanner: View {
             Image(systemName: "sparkles.rectangle.stack")
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Preview data")
+                Text("Preview fallback")
                     .font(.subheadline.weight(.semibold))
-                Text("The menu bar shell is live. GitHub authentication and syncing land next.")
+                Text("Sign in with GitHub to switch this panel from sample activity to live workflow runs.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

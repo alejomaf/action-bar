@@ -127,7 +127,7 @@ struct SettingsView: View {
                             .foregroundStyle(.red)
                     }
 
-                    Text("Workflow activity still runs in preview mode until live GraphQL syncing is wired in the next slice.")
+                    Text("When signed out, Action Bar falls back to preview data. Once signed in, workflow activity loads live from GitHub.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

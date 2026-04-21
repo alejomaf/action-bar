@@ -46,13 +46,13 @@ final class AppStore {
         repositoryRegistry: RepositoryRegistry = RepositoryRegistry(),
         settingsStore: SettingsStore = SettingsStore(),
         authService: GitHubAuthService = GitHubAuthService(),
-        client: GitHubClient = GitHubClient(mode: .preview),
+        client: GitHubClient? = nil,
         poller: RunPoller = RunPoller()
     ) {
         self.repositoryRegistry = repositoryRegistry
         self.settingsStore = settingsStore
         self.authService = authService
-        self.client = client
+        self.client = client ?? GitHubClient(authService: authService)
         self.poller = poller
 
         let persistedRepositories = repositoryRegistry.load()
@@ -79,6 +79,14 @@ final class AppStore {
             let snapshot = try await poller.refresh(using: client, repositories: repositories)
             apply(snapshot)
         } catch {
+            if let authError = error as? GitHubAuthError,
+               authError == .invalidToken {
+                try? await authService.signOut()
+                authenticatedAccount = nil
+                authErrorMessage = authError.localizedDescription
+                apply(.preview(for: repositories))
+            }
+
             errorMessage = error.localizedDescription
         }
 
@@ -121,6 +129,9 @@ final class AppStore {
                     self.isAuthenticating = false
                     self.authErrorMessage = nil
                     self.authStatusMessage = "Signed in as \(account.login)."
+                    Task {
+                        await self.refresh()
+                    }
                 }
             } catch is CancellationError {
                 await MainActor.run {
@@ -155,6 +166,10 @@ final class AppStore {
         isAuthenticating = false
         authErrorMessage = nil
         authStatusMessage = "Signed out."
+
+        Task {
+            await refresh()
+        }
     }
 
     func addRepository(from input: String) throws {

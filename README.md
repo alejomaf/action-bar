@@ -39,14 +39,14 @@ It is **intentionally not** a full GitHub client. No issues, no PRs, no code bro
 - Smart status icon that reflects aggregate activity (active count, recent failure)
 - Click a run to open it in your browser, ⌘-click to copy its URL, context menu for logs
 - Local repository registry persisted via `UserDefaults`
-- Settings window with add/remove repositories and runtime info
-- Currently runs on **preview data** while live syncing is being wired up
+- Settings window with add/remove repositories, OAuth client setup, and account state
+- GitHub OAuth Device Flow authentication with session storage in the macOS Keychain
+- Live workflow runs from GitHub once authenticated; preview data remains available as a signed-out fallback
 
 ### Planned for v0.1 (MVP)
 
-- GitHub OAuth Device Flow authentication (no backend required) + Personal Access Token fallback
-- Token storage in the macOS Keychain
-- Live workflow runs via the GitHub GraphQL API
+- Personal Access Token fallback
+- GraphQL batching for more efficient multi-repo refreshes
 - Adaptive polling: 15s while runs are active, 60s when idle, paused on sleep
 - Native notifications when watched workflows fail
 - Launch at login (`SMAppService`)
@@ -58,8 +58,8 @@ See the [Roadmap](#roadmap) for what comes after v0.1.
 
 ## Screenshots
 
-> Screenshots will be added once the live sync slice lands.
-> The current build runs on preview data and looks like the dropdown described in the [UX section](#ux-overview).
+> Screenshots will be added once the live sync UI is polished.
+> The current build already supports live GitHub workflow activity after sign-in, and falls back to preview data while signed out.
 
 ---
 
@@ -164,7 +164,7 @@ Action Bar is built around a few simple primitives:
 
 - **`ActionBarApp`** — the SwiftUI `App` entry point. Hosts the `MenuBarExtra` scene and the `Settings` scene. Sets activation policy to `.accessory` so no Dock icon appears.
 - **`AppStore`** — an `@Observable`, `@MainActor`-isolated store that holds repositories, run groups, refresh state, errors, and rate-limit info. Owned by the app, injected into views.
-- **`GitHubClient`** — an `actor` that talks to GitHub. Today it returns preview snapshots; it will grow GraphQL + REST methods backed by `URLSession` and ETag caching.
+- **`GitHubClient`** — an `actor` that talks to GitHub. It uses the authenticated session to fetch live workflow runs from the GitHub Actions REST API and falls back to preview snapshots when signed out.
 - **`RunPoller`** — an `actor` responsible for refresh cadence and (eventually) backoff/scheduling.
 - **`RepositoryRegistry`** — persists the user's tracked repositories via `UserDefaults`.
 - **`MenuBarPanel` / `SettingsView`** — pure SwiftUI views that read from `AppStore`.
